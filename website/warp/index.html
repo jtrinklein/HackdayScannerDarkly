@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="description" content="WebGL Photo Warping Demo" />
+    <meta name="t_omni_demopage" content="1" />
+    <title>Photo warping with WebGL</title>
+</head>
+<body>
+    <div id="ReturnAndShareControls"></div>
+    <h1 id="DemoTitle">
+        Photo warping with WebGL
+    </h1>
+
+    <div id="DemoContent">
+        <div style='width:600px; height:600px'>
+            <div style='position: relative'>
+            <canvas style='position: absolute' id='webglcanvas' width='600' height='600'></canvas>
+            <canvas style='position: absolute' id='2dcanvas' width='600' height='600'></canvas>
+            </div>
+        </div>
+
+        <div id="info">
+            <a href="http://threejs.org" target="_blank">three.js</a> - OBJLoader test
+        </div>
+
+        <div style="text-align:center">
+        <button id="openphoto1" onclick="OpenPhoto1()">Open a photo</button>
+        <span id="openphoto2" style="display:none">Pick a photo: <input type="file" id="files" name="files[]" /></span>
+        <button onclick="undo()">Undo</button>
+        <!-- <button onclick="reset()">Start over</button> -->
+        <button onclick="save()">Save</button>
+        </div>
+    </div>
+
+    <div id="DemoIntroduction" style="display:none">
+        <div class="heading">Sorry!</div>
+        This demonstation requires a browser with WebGL support.
+    </div>
+
+    <div id="log"></div>
+
+    <a id="showDemoDetails" class="heading" href="javascript:showDemoDetails()">More details...</a>
+    <div id="DemoDetails" style="display:none">
+
+        To render the warped photo above, a mesh of 400 triangle coordinates, a photo, a vertex & fragment shader program and uniform points are uploaded to the GPU using WebGL.<br />
+        <br />
+
+        <label><input type="checkbox" name="showUniforms" id="showUniforms" onchange="renderer.changeMode();renderer.render()" />Show uniform points</label>
+        <div>
+            <label><input type="radio" name="rendertype" id="renderLines" onclick="renderer.render()" />Show triangle mesh</label>
+            <label><input type="radio" name="rendertype" id="renderTriangles" onclick="renderer.render()" checked />Show rendered photo</label>
+        </div>
+        <br />
+        When you click and drag on the photo, new uniform points are set on the GPU...<br /><br />
+        <div class="heading">Vertex shader</div>
+        <img src="vertex.png"/><br />
+        ...The GPU runs the vertex shader below to distort the mesh using the uniform points...<br /><br />
+        <pre id="vertexshadersource"></pre>
+        <br />
+        <div class="heading">Fragment shader</div>
+        <img src="fragment.png"/><br />
+        ...and the fragment shader paints photo pixels using the distorted mesh.<br /><br />
+        <pre id="fragmentshadersource"></pre>
+
+        <br />
+    </div>
+
+    <script type="text/javascript" src="demo.js"></script>
+    <script type="text/javascript" src="../lib/three.js"></script>
+    <script type="text/javascript" src="../lib/OBJLoader.js"></script>
+
+<script>
+
+var container, stats;
+
+var camera, scene, renderer;
+
+var mouseX = 0, mouseY = 0;
+
+var windowHalfX = window.innerWidth / 2;
+var windowHalfY = window.innerHeight / 2;
+
+
+init();
+animate();
+
+
+function init() {
+
+    container = document.createElement( 'div' );
+    document.body.appendChild( container );
+
+    camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+    camera.position.z = 100;
+
+    // scene
+
+    scene = new THREE.Scene();
+
+    var ambient = new THREE.AmbientLight( 0x101030 );
+    scene.add( ambient );
+
+    var directionalLight = new THREE.DirectionalLight( 0xffeedd );
+    directionalLight.position.set( 0, 0, 1 );
+    scene.add( directionalLight );
+
+    // texture
+
+    var manager = new THREE.LoadingManager();
+    manager.onProgress = function ( item, loaded, total ) {
+
+        console.log( item, loaded, total );
+
+    };
+    // model
+
+    var loader = new THREE.OBJLoader( manager );
+    loader.load( 'male02.obj', function ( object ) {
+        object.traverse( function ( child ) {
+
+            if ( child instanceof THREE.Mesh ) {
+
+//                child.material.map = texture;
+
+            }
+
+        } );
+
+        object.position.y = - 80;
+        scene.add( object );
+
+    } );
+
+    //
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    container.appendChild( renderer.domElement );
+
+    document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+    //
+
+    window.addEventListener( 'resize', onWindowResize, false );
+
+}
+
+function onWindowResize() {
+
+    windowHalfX = window.innerWidth / 2;
+    windowHalfY = window.innerHeight / 2;
+
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize( window.innerWidth, window.innerHeight );
+
+}
+
+function onDocumentMouseMove( event ) {
+
+    mouseX = ( event.clientX - windowHalfX ) / 2;
+    mouseY = ( event.clientY - windowHalfY ) / 2;
+
+}
+
+//
+
+function animate() {
+
+    requestAnimationFrame( animate );
+    render();
+
+}
+
+function render() {
+
+    camera.position.x += ( mouseX - camera.position.x ) * .05;
+    camera.position.y += ( - mouseY - camera.position.y ) * .05;
+
+    camera.lookAt( scene.position );
+
+    renderer.render( scene, camera );
+
+}
+
+</script>
+
+    <!-- vertex shader -->
+<script id="2d-vertex-shader" type="x-shader/x-vertex">attribute vec2 a_texCoord;
+varying vec2 v_texCoord;
+#define MAXPOINTS 8
+uniform vec2 p1[MAXPOINTS]; // where the drag started
+uniform vec2 p2[MAXPOINTS]; // where the drag ended
+
+void main() {
+    v_texCoord = a_texCoord; // Set the texture coord to use
+
+    vec2 position = a_texCoord * 2.0 - 1.0; // convert 0 - 1 range to -1 to +1 range
+
+    for (int i = 0; i < MAXPOINTS; i++)
+    {
+        float dragdistance = distance(p1[i], p2[i]);
+        float mydistance = distance(p1[i], position);
+
+        if (mydistance < dragdistance)
+        {
+            vec2 maxdistort = (p2[i] - p1[i]) / 4.0;
+
+            float normalizeddistance = mydistance / dragdistance;
+
+            float normalizedimpact = (cos(normalizeddistance*3.14159265359)+1.0)/2.0;
+
+            position += (maxdistort * normalizedimpact);
+        }
+    }
+
+    gl_Position = vec4(position, 0.0, 1.0);
+}
+
+</script>
+
+
+<!-- fragment shader -->
+<script id="2d-fragment-shader" type="x-shader/x-fragment">precision mediump float;
+
+uniform sampler2D u_image;
+
+varying vec2 v_texCoord;
+
+void main() {
+    gl_FragColor = texture2D(u_image, v_texCoord);
+}
+</script>
+
+<!-- fragment shader -->
+<script id="black" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec2 v_texCoord;
+
+void main() {
+    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+}
+</script>
+
+</body>
+</html>
